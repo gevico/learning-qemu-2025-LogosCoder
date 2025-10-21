@@ -1,0 +1,22 @@
+# G233 custom instructions
+
+
+# Format for custom R-type instructions
+%rd        7:5
+%rs1       15:5
+%rs2       20:5
+
+# G233 Custom Instructions (opcode 0x7b, funct3=6)
+# DMA:    funct7=6,  funct3=6, opcode=0x7b
+# Sort:   funct7=22, funct3=6, opcode=0x7b
+# Crush:  funct7=38, funct3=6, opcode=0x7b
+# Expand: funct7=54, funct3=6, opcode=0x7b
+
+&r_format    rd rs1 rs2
+
+@r       .......  ..... ..... ... ..... ....... &r_format %rd %rs1 %rs2
+
+dma      0000110  ..... ..... 110 ..... 1111011 @r
+sort     0010110  ..... ..... 110 ..... 1111011 @r
+crush    0100110  ..... ..... 110 ..... 1111011 @r
+expand   0110110  ..... ..... 110 ..... 1111011 @r
