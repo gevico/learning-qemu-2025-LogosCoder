@@ -36,6 +36,9 @@
 #include "hw/char/pl011.h"
 
 /* TODO: you need include some header files */
+#include "hw/riscv/riscv_hart.h" 
+#include "hw/gpio/sifive_gpio.h" 
+#include "hw/qdev-properties.h" 
 
 static const MemMapEntry g233_memmap[] = {
     [G233_DEV_MROM] =     {     0x1000,     0x2000 },
@@ -53,6 +56,13 @@ static void g233_soc_init(Object *obj)
      * You can add more devices here(e.g. cpu, gpio)
      * Attention: The cpu resetvec is 0x1004
      */
+    G233SoCState *s = RISCV_G233_SOC(obj);
+
+    /* Initialize the CPU array object */
+    object_initialize_child(obj, "cpus", &s->cpus, TYPE_RISCV_HART_ARRAY);
+
+    /* Initialize the GPIO controller object */
+    object_initialize_child(obj, "gpio", &s->gpio, TYPE_SIFIVE_GPIO);
 }
 
 static void g233_soc_realize(DeviceState *dev, Error **errp)
@@ -63,6 +73,17 @@ static void g233_soc_realize(DeviceState *dev, Error **errp)
     const MemMapEntry *memmap = g233_memmap;
 
     /* CPUs realize */
+    /* Set CPU array properties */
+    qdev_prop_set_uint32(DEVICE(&s->cpus), "num-harts", 1);
+    qdev_prop_set_uint32(DEVICE(&s->cpus), "hartid-base", 0);
+    /* Set CPU type to the G233-specific CPU type */
+    qdev_prop_set_string(DEVICE(&s->cpus), "cpu-type", TYPE_RISCV_CPU_GEVICO_G233);
+    /* Set CPU reset vector address */
+    qdev_prop_set_uint64(DEVICE(&s->cpus), "resetvec", 0x1004);
+    /* Realize the CPU array */
+    if (!sysbus_realize(SYS_BUS_DEVICE(&s->cpus), errp)) {
+         return;
+    }
 
     /* Mask ROM */
     memory_region_init_rom(&s->mask_rom, OBJECT(dev), "riscv.g233.mrom",
@@ -93,6 +114,7 @@ static void g233_soc_realize(DeviceState *dev, Error **errp)
                                32768, false); /* TODO: set default freq */
 
     /* GPIO */
+    qdev_prop_set_uint32(DEVICE(&s->gpio), "ngpio", 32);
     if (!sysbus_realize(SYS_BUS_DEVICE(&s->gpio), errp)) {
         return;
     }
@@ -160,10 +182,13 @@ static void g233_machine_init(MachineState *machine)
     }
 
     /* Initialize SoC */
-
-
+    object_initialize_child(OBJECT(machine), "soc", &s->soc, TYPE_RISCV_G233_SOC);
+    /* Realize SoC */
+    if (!qdev_realize(DEVICE(&s->soc), NULL, &error_fatal)) {
+         return; 
+    }
     /* Data Memory(DDR RAM) */
-
+    memory_region_add_subregion(get_system_memory(), memmap[G233_DEV_DRAM].base, machine->ram);
     /* Mask ROM reset vector */
     uint32_t reset_vec[5];
     reset_vec[1] = 0x0010029b; /* 0x1004: addiw  t0, zero, 1 */
