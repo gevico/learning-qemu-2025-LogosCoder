@@ -1,3 +1,10 @@
+/*
+ * G233 RISC-V Custom Instruction Helpers
+ *
+ * Copyright (c) 2025 LogosCoder(Mao Qin) forever@bupt.edu.cn
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
