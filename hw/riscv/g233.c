@@ -34,8 +34,7 @@
 #include "hw/intc/sifive_plic.h"
 #include "hw/misc/unimp.h"
 #include "hw/char/pl011.h"
-
-/* TODO: you need include some header files */
+#include "hw/ssi/ssi.h"
 #include "hw/riscv/riscv_hart.h" 
 #include "hw/gpio/sifive_gpio.h" 
 #include "hw/qdev-properties.h" 
@@ -47,6 +46,7 @@ static const MemMapEntry g233_memmap[] = {
     [G233_DEV_UART0] =    { 0x10000000,     0x1000 },
     [G233_DEV_GPIO0] =    { 0x10012000,     0x1000 },
     [G233_DEV_PWM0] =     { 0x10015000,     0x1000 },
+    [G233_DEV_SPI0] =     { 0x10018000,     0x1000 },
     [G233_DEV_DRAM] =     { 0x80000000, 0x40000000 },
 };
 
@@ -140,6 +140,14 @@ static void g233_soc_realize(DeviceState *dev, Error **errp)
     /* SiFive.PWM0 */
     create_unimplemented_device("riscv.g233.pwm0",
         memmap[G233_DEV_PWM0].base, memmap[G233_DEV_PWM0].size);
+    /* SPI0 */
+    s->spi0 = qdev_new(TYPE_G233_SPI);
+    if (!sysbus_realize(SYS_BUS_DEVICE(s->spi0), errp)) {
+        return;
+    }
+    sysbus_mmio_map(SYS_BUS_DEVICE(s->spi0), 0, memmap[G233_DEV_SPI0].base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(s->spi0), 0,
+                       qdev_get_gpio_in(DEVICE(s->plic), G233_SPI0_IRQ));
 
 }
 
@@ -187,6 +195,34 @@ static void g233_machine_init(MachineState *machine)
     if (!qdev_realize(DEVICE(&s->soc), NULL, &error_fatal)) {
          return; 
     }
+    
+    /* 1. Get the SSI bus created by the SPI controller */
+    SSIBus *spi_bus = (SSIBus *)qdev_get_child_bus(DEVICE(s->soc.spi0), "ssi");
+    if (!spi_bus) {
+        error_report("g233_machine_init: Could not find 'ssi' bus");
+        return;
+    }
+    /* 2. Create Flash 0 (CS0), W25X16 (2MB) */
+    DeviceState *flash0 = qdev_new(TYPE_G233_FLASH);
+    qdev_prop_set_uint32(flash0, "size", 2 * 1024 * 1024);
+    qdev_prop_set_uint8(flash0, "cs", 0);  /* Explicitly set CS0 */
+    if (!ssi_realize_and_unref(flash0, spi_bus, &error_fatal)) {
+        return;
+    }
+
+    /* 3. Create Flash 1 (CS1), W25X32 (4MB) */
+    DeviceState *flash1 = qdev_new(TYPE_G233_FLASH);
+    qdev_prop_set_uint32(flash1, "size", 4 * 1024 * 1024);
+    qdev_prop_set_uint8(flash1, "cs", 1);  /* Explicitly set CS1 */
+    if (!ssi_realize_and_unref(flash1, spi_bus, &error_fatal)) {
+        return;
+    }
+
+    /* 4) Connect the master's CS outputs to each slave's CS input */
+    qdev_connect_gpio_out_named(DEVICE(s->soc.spi0), SSI_GPIO_CS, 0,
+                            qdev_get_gpio_in_named(flash0, SSI_GPIO_CS, 0));
+    qdev_connect_gpio_out_named(DEVICE(s->soc.spi0), SSI_GPIO_CS, 1,
+                            qdev_get_gpio_in_named(flash1, SSI_GPIO_CS, 0));
     /* Data Memory(DDR RAM) */
     memory_region_add_subregion(get_system_memory(), memmap[G233_DEV_DRAM].base, machine->ram);
     /* Mask ROM reset vector */
