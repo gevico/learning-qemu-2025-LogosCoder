@@ -22,3 +22,5 @@ GTAGS
 *.gcov
 *.json
 *idx
+*.sh
+*.log
